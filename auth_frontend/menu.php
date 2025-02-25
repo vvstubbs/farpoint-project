@@ -31,7 +31,7 @@ if (!isset($_SESSION['user_id'])) {
     <button class="toggle-button" onclick="toggleDarkMode()">Toggle Dark Mode</button>
     <h1>Menu</h1>
     <ul>
-        <li><a href="placeholder1.php">Placeholder 1</a></li>
+        <li><a href="command_interface.php">Command Line Interface</a></li>
         <li><a href="placeholder2.php">Placeholder 2</a></li>
         <li><a href="placeholder3.php">Placeholder 3</a></li>
         <li><a href="placeholder4.php">Placeholder 4</a></li>
