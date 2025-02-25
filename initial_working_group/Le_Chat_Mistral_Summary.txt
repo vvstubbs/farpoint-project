@@ -1,0 +1,1582 @@
+Sure, here's a summary of all the final code up to the last modification, including the login screen, menu screen, and placeholder pages.
+
+### Directory Structure:
+```
+/var/www/html/auth_system/
+    ├── index.php
+    ├── register.php
+    ├── login.php
+    ├── profile.php
+    ├── menu.php
+    ├── placeholder1.php
+    ├── placeholder2.php
+    ├── placeholder3.php
+    ├── placeholder4.php
+    ├── placeholder5.php
+    ├── logout.php
+    ├── db.php
+    ├── mail.php
+    ├── verify.php
+    ├── styles.css
+```
+
+### 1. `db.php` - Database Connection
+```php
+<?php
+$servername = "localhost";
+$username = "your_db_username";
+$password = "your_db_password";
+$dbname = "UserProfileDB";
+
+// Create connection
+$conn = new mysqli($servername, $username, $password, $dbname);
+
+// Check connection
+if ($conn->connect_error) {
+    die("Connection failed: " . $conn->connect_error);
+}
+?>
+```
+
+### 2. `index.php` - Home Page
+```php
+<?php
+session_start();
+if (isset($_SESSION['user_id'])) {
+    header("Location: menu.php");
+    exit();
+}
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Home</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <h1>Welcome to the Authentication System</h1>
+    <a href="register.php">Register</a> | <a href="login.php">Login</a>
+</body>
+</html>
+```
+
+### 3. `register.php` - Registration Page
+```php
+<?php
+require 'db.php';
+
+if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    $firstName = $_POST['firstName'];
+    $lastName = $_POST['lastName'];
+    $mainEmail = $_POST['mainEmail'];
+    $mainPassword = password_hash($_POST['mainPassword'], PASSWORD_BCRYPT);
+
+    $sql = "INSERT INTO UserProfile (FirstName, LastName, MainEmail, MainPassword) VALUES (?, ?, ?, ?)";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("ssss", $firstName, $lastName, $mainEmail, $mainPassword);
+
+    if ($stmt->execute()) {
+        echo "Registration successful!";
+    } else {
+        echo "Error: " . $stmt->error;
+    }
+
+    $stmt->close();
+    $conn->close();
+}
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <h1>Register</h1>
+    <form method="POST" action="register.php">
+        <label for="firstName">First Name:</label>
+        <input type="text" id="firstName" name="firstName" required><br>
+        <label for="lastName">Last Name:</label>
+        <input type="text" id="lastName" name="lastName" required><br>
+        <label for="mainEmail">Main Email:</label>
+        <input type="email" id="mainEmail" name="mainEmail" required><br>
+        <label for="mainPassword">Main Password:</label>
+        <input type="password" id="mainPassword" name="mainPassword" required><br>
+        <button type="submit">Register</button>
+    </form>
+    <a href="login.php">Already have an account? Login</a>
+</body>
+</html>
+```
+
+### 4. `login.php` - Login Page
+```php
+<?php
+session_start();
+require 'db.php';
+
+$error = '';
+
+if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    $mainEmail = $_POST['mainEmail'];
+    $mainPassword = $_POST['mainPassword'];
+
+    $sql = "SELECT * FROM UserProfile WHERE MainEmail = ?";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("s", $mainEmail);
+    $stmt->execute();
+    $result = $stmt->get_result();
+
+    if ($result->num_rows == 1) {
+        $user = $result->fetch_assoc();
+        if (password_verify($mainPassword, $user['MainPassword'])) {
+            $_SESSION['user_id'] = $user['UserID'];
+            header("Location: menu.php");
+            exit();
+        } else {
+            $error = "Invalid password.";
+        }
+    } else {
+        $error = "No user found with this email.";
+    }
+
+    $stmt->close();
+    $conn->close();
+}
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <h1>Login</h1>
+    <?php if ($error): ?>
+        <div class="error"><?php echo $error; ?></div>
+    <?php endif; ?>
+    <form method="POST" action="login.php">
+        <label for="mainEmail">Main Email:</label>
+        <input type="email" id="mainEmail" name="mainEmail" required><br>
+        <label for="mainPassword">Main Password:</label>
+        <input type="password" id="mainPassword" name="mainPassword" required><br>
+        <button type="submit">Login</button>
+    </form>
+    <a href="register.php">Don't have an account? Register</a>
+</body>
+</html>
+```
+
+### 5. `profile.php` - Profile Page
+```php
+<?php
+session_start();
+require 'db.php';
+require 'mail.php';
+
+if (!isset($_SESSION['user_id'])) {
+    header("Location: login.php");
+    exit();
+}
+
+$userID = $_SESSION['user_id'];
+$sql = "SELECT * FROM UserProfile WHERE UserID = ?";
+$stmt = $conn->prepare($sql);
+$stmt->bind_param("i", $userID);
+$stmt->execute();
+$result = $stmt->get_result();
+$user = $result->fetch_assoc();
+$stmt->close();
+
+$error = '';
+$success = '';
+
+if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    if (isset($_POST['updateProfile'])) {
+        $firstName = $_POST['firstName'];
+        $lastName = $_POST['lastName'];
+        $mainEmail = $_POST['mainEmail'];
+
+        if ($mainEmail != $user['MainEmail']) {
+            $verificationCode = bin2hex(random_bytes(16));
+            $sql = "UPDATE UserProfile SET VerificationCode = ? WHERE UserID = ?";
+            $stmt = $conn->prepare($sql);
+            $stmt->bind_param("si", $verificationCode, $userID);
+            $stmt->execute();
+            $stmt->close();
+
+            sendVerificationEmail($mainEmail, $verificationCode);
+            $success = "Verification email sent to new main email address.";
+        } else {
+            $sql = "UPDATE UserProfile SET FirstName = ?, LastName = ? WHERE UserID = ?";
+            $stmt = $conn->prepare($sql);
+            $stmt->bind_param("ssi", $firstName, $lastName, $userID);
+            $stmt->execute();
+            $stmt->close();
+            $success = "Profile updated successfully!";
+        }
+    } elseif (isset($_POST['changePassword'])) {
+        $currentPassword = $_POST['currentPassword'];
+        $newPassword = $_POST['newPassword'];
+        $confirmPassword = $_POST['confirmPassword'];
+
+        if (password_verify($currentPassword, $user['MainPassword'])) {
+            if ($newPassword === $confirmPassword) {
+                $hashedPassword = password_hash($newPassword, PASSWORD_BCRYPT);
+                $sql = "UPDATE UserProfile SET MainPassword = ? WHERE UserID = ?";
+                $stmt = $conn->prepare($sql);
+                $stmt->bind_param("si", $hashedPassword, $userID);
+                $stmt->execute();
+                $stmt->close();
+                $success = "Main Password updated successfully!";
+            } else {
+                $error = "New passwords do not match.";
+            }
+        } else {
+            $error = "Current password is incorrect.";
+        }
+    } elseif (isset($_POST['addAdditionalPassword'])) {
+        $additionalPassword = password_hash($_POST['additionalPassword'], PASSWORD_BCRYPT);
+        for ($i = 1; $i <= 4; $i++) {
+            if (empty($user["AdditionalPassword$i"])) {
+                $sql = "UPDATE UserProfile SET AdditionalPassword$i = ? WHERE UserID = ?";
+                $stmt = $conn->prepare($sql);
+                $stmt->bind_param("si", $additionalPassword, $userID);
+                $stmt->execute();
+                $stmt->close();
+                $success = "Additional Password $i added successfully!";
+                break;
+            }
+        }
+    } elseif (isset($_POST['editAdditionalPassword'])) {
+        $passwordIndex = $_POST['passwordIndex'];
+        $newPassword = password_hash($_POST['newPassword'], PASSWORD_BCRYPT);
+
+        $sql = "UPDATE UserProfile SET AdditionalPassword$passwordIndex = ? WHERE UserID = ?";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param("si", $newPassword, $userID);
+        $stmt->execute();
+        $stmt->close();
+        $success = "Additional Password $passwordIndex updated successfully!";
+    } elseif (isset($_POST['addEmail'])) {
+        $newEmail = $_POST['newEmail'];
+        for ($i = 2; $i <= 6; $i++) {
+            if (empty($user["Email$i"])) {
+                $sql = "UPDATE UserProfile SET Email$i = ? WHERE UserID = ?";
+                $stmt = $conn->prepare($sql);
+                $stmt->bind_param("si", $newEmail, $userID);
+                $stmt->execute();
+                $stmt->close();
+                $success = "Email $i added successfully!";
+                break;
+            }
+        }
+    } elseif (isset($_POST['editEmail'])) {
+        $emailIndex = $_POST['emailIndex'];
+        $newEmail = $_POST['newEmail'];
+
+        $sql = "UPDATE UserProfile SET Email$emailIndex = ? WHERE UserID = ?";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param("si", $newEmail, $userID);
+        $stmt->execute();
+        $stmt->close();
+        $success = "Email $emailIndex updated successfully!";
+    }
+}
+
+$conn->close();
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Profile</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <h1>Profile</h1>
+    <?php if ($error): ?>
+        <div class="error"><?php echo $error; ?></div>
+    <?php endif; ?>
+    <?php if ($success): ?>
+        <div class="success"><?php echo $success; ?></div>
+    <?php endif; ?>
+    <form method="POST" action="profile.php">
+        <label for="firstName">First Name:</label>
+        <input type="text" id="firstName" name="firstName" value="<?php echo $user['FirstName']; ?>" required><br>
+        <label for="lastName">Last Name:</label>
+        <input type="text" id="lastName" name="lastName" value="<?php echo $user['LastName']; ?>" required><br>
+        <label for="mainEmail">Main Email:</label>
+        <input type="email" id="mainEmail" name="mainEmail" value="<?php echo $user['MainEmail']; ?>" required><br>
+        <button type="submit" name="updateProfile">Update Profile</button>
+    </form>
+
+    <h2>Change Main Password</h2>
+    <form method="POST" action="profile.php">
+        <label for="currentPassword">Current Password:</label>
+        <input type="password" id="currentPassword" name="currentPassword" required><br>
+        <label for="newPassword">New Password:</label>
+        <input type="password" id="newPassword" name="newPassword" required><br>
+        <label for="confirmPassword">Confirm New Password:</label>
+        <input type="password" id="confirmPassword" name="confirmPassword" required><br>
+        <button type="submit" name="changePassword">Change Password</button>
+    </form>
+
+    <h2>Manage Additional Passwords</h2>
+    <form method="POST" action="profile.php">
+        <label for="additionalPassword">Add Additional Password:</label>
+        <input type="password" id="additionalPassword" name="additionalPassword"><br>
+        <button type="submit" name="addAdditionalPassword">Add Password</button>
+    </form>
+
+    <?php for ($i = 1; $i <= 4; $i++): ?>
+        <?php if (!empty($user["AdditionalPassword$i"])): ?>
+            <h3>Edit Additional Password <?php echo $i; ?></h3>
+            <form method="POST" action="profile.php">
+                <input type="hidden" name="passwordIndex" value="<?php echo $i; ?>">
+                <label for="newPassword<?php echo $i; ?>">New Password:</label>
+                <input type="password" id="newPassword<?php echo $i; ?>" name="newPassword" required><br>
+                <button type="submit" name="editAdditionalPassword">Update Password</button>
+            </form>
+        <?php endif; ?>
+    <?php endfor; ?>
+
+    <h2>Manage Emails</h2>
+    <form method="POST" action="profile.php">
+        <label for="newEmail">Add Additional Email:</label>
+        <input type="email" id="newEmail" name="newEmail"><br>
+        <button type="submit" name="addEmail">Add Email</button>
+    </form>
+
+    <?php for ($i = 2; $i <= 6; $i++): ?>
+        <?php if (!empty($user["Email$i"])): ?>
+            <h3>Edit Email <?php echo $i; ?></h3>
+            <form method="POST" action="profile.php">
+                <input type="hidden" name="emailIndex" value="<?php echo $i; ?>">
+                <label for="newEmail<?php echo $i; ?>">New Email:</label>
+                <input type="email" id="newEmail<?php echo $i; ?>" name="newEmail" value="<?php echo $user["Email$i"]; ?>" required><br>
+                <button type="submit" name="editEmail">Update Email</button>
+            </form>
+        <?php endif; ?>
+    <?php endfor; ?>
+
+    <a href="logout.php">Logout</a>
+</body>
+</html>
+```
+
+### 6. `menu.php` - Menu Screen
+```php
+<?php
+session_start();
+
+if (!isset($_SESSION['user_id'])) {
+    header("Location: login.php");
+    exit();
+}
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Menu</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <h1>Menu</h1>
+    <ul>
+        <li><a href="placeholder1.php">Placeholder 1</a></li>
+        <li><a href="placeholder2.php">Placeholder 2</a></li>
+        <li><a href="placeholder3.php">Placeholder 3</a></li>
+        <li><a href="placeholder4.php">Placeholder 4</a></li>
+        <li><a href="placeholder5.php">Placeholder 5</a></li>
+    </ul>
+    <a href="logout.php">Logout</a>
+</body>
+</html>
+```
+
+### 7. `placeholder1.php` to `placeholder5.php` - Placeholder Pages
+```php
+<?php
+session_start();
+
+if (!isset($_SESSION['user_id'])) {
+    header("Location: login.php");
+    exit();
+}
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Placeholder 1</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <h1>Placeholder 1</h1>
+    <p>This is a placeholder page. You can modify this content to suit your needs.</p>
+    <a href="menu.php">Back to Menu</a>
+</body>
+</html>
+```
+Repeat the above code for `placeholder2.php`, `placeholder3.php`, `placeholder4.php`, and `placeholder5.php`, changing the title and content accordingly.
+
+### 8. `logout.php` - Logout Script
+```php
+<?php
+session_start();
+session_destroy();
+header("Location: index.php");
+exit();
+?>
+```
+
+### 9. `mail.php` - Email Sending Script
+```php
+<?php
+function sendVerificationEmail($email, $verificationCode) {
+    $subject = "Verify Your Email";
+    $message = "Click the following link to verify your email: http://yourdomain.com/verify.php?code=$verificationCode";
+    $headers = "From: no-reply@yourdomain.com";
+
+    mail($email, $subject, $message, $headers);
+}
+?>
+```
+
+### 10. `verify.php` - Email Verification Script
+```php
+<?php
+require 'db.php';
+
+if (isset($_GET['code'])) {
+    $verificationCode = $_GET['code'];
+
+    $sql = "SELECT * FROM UserProfile WHERE VerificationCode = ?";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("s", $verificationCode);
+    $stmt->execute();
+    $result = $stmt->get_result();
+
+    if ($result->num_rows == 1) {
+        $user = $result->fetch_assoc();
+        $sql = "UPDATE UserProfile SET MainEmail = ?, VerificationCode = NULL WHERE UserID = ?";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param("si", $user['MainEmail'], $user['UserID']);
+        $stmt->execute();
+        $stmt->close();
+        echo "Email verified successfully!";
+    } else {
+        echo "Invalid verification code.";
+    }
+
+    $stmt->close();
+    $conn->close();
+} else {
+    echo "Verification code not provided.";
+}
+?>
+```
+
+### 11. `styles.css` - Basic Styling
+```css
+body {
+    font-family: Arial, sans-serif;
+    margin: 20px;
+}
+
+h1 {
+    color: #333;
+}
+
+form {
+    margin-top: 20px;
+}
+
+label {
+    display: block;
+    margin-top: 10px;
+}
+
+input {
+    width: 100%;
+    padding: 8px;
+    margin-top: 5px;
+}
+
+button {
+    margin-top: 20px;
+    padding: 10px 20px;
+    background-color: #007BFF;
+    color: white;
+    border: none;
+    cursor: pointer;
+}
+
+button:hover {
+    background-color: #0056b3;
+}
+
+a {
+    display: block;
+    margin-top: 20px;
+    color: #007BFF;
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+.error {
+    color: red;
+    margin-top: 20px;
+}
+
+.success {
+    color: green;
+    margin-top: 20px;
+}
+```
+
+### Summary:
+- **Database Connection**: `db.php`
+- **Home Page**: `index.php`
+- **Registration Page**: `register.php`
+- **Login Page**: `login.php`
+- **Profile Page**: `profile.php`
+- **Menu Screen**: `menu.php`
+- **Placeholder Pages**: `placeholder1.php` to `placeholder5.php`
+- **Logout Script**: `logout.php`
+- **Email Sending Script**: `mail.php`
+- **Email Verification Script**: `verify.php`
+- **Basic Styling**: `styles.css`
+
+This setup provides a basic authentication system with user registration, login, profile management, and a menu screen with placeholders for additional pages. You can customize the placeholder pages to suit the specific needs of your system.
+
+----
+
+To create a new PHP module that allows for editing a user's data record for all fields except the user's name and password, we can create a new file called `edit_profile.php`. This file will handle the form submission for updating the user's data and will display the current data for editing.
+
+Here is the code for `edit_profile.php`:
+
+```php
+<?php
+session_start();
+require 'db.php';
+
+if (!isset($_SESSION['user_id'])) {
+    header("Location: login.php");
+    exit();
+}
+
+$userID = $_SESSION['user_id'];
+$sql = "SELECT * FROM UserProfile WHERE UserID = ?";
+$stmt = $conn->prepare($sql);
+$stmt->bind_param("i", $userID);
+$stmt->execute();
+$result = $stmt->get_result();
+$user = $result->fetch_assoc();
+$stmt->close();
+
+$error = '';
+$success = '';
+
+if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    $firstName = $_POST['firstName'];
+    $lastName = $_POST['lastName'];
+    $mainEmail = $_POST['mainEmail'];
+    $email2 = $_POST['email2'];
+    $email3 = $_POST['email3'];
+    $email4 = $_POST['email4'];
+    $email5 = $_POST['email5'];
+    $email6 = $_POST['email6'];
+    $additionalPassword1 = !empty($_POST['additionalPassword1']) ? password_hash($_POST['additionalPassword1'], PASSWORD_BCRYPT) : null;
+    $additionalPassword2 = !empty($_POST['additionalPassword2']) ? password_hash($_POST['additionalPassword2'], PASSWORD_BCRYPT) : null;
+    $additionalPassword3 = !empty($_POST['additionalPassword3']) ? password_hash($_POST['additionalPassword3'], PASSWORD_BCRYPT) : null;
+    $additionalPassword4 = !empty($_POST['additionalPassword4']) ? password_hash($_POST['additionalPassword4'], PASSWORD_BCRYPT) : null;
+
+    $sql = "UPDATE UserProfile SET
+            FirstName = ?,
+            LastName = ?,
+            MainEmail = ?,
+            Email2 = ?,
+            Email3 = ?,
+            Email4 = ?,
+            Email5 = ?,
+            Email6 = ?,
+            AdditionalPassword1 = ?,
+            AdditionalPassword2 = ?,
+            AdditionalPassword3 = ?,
+            AdditionalPassword4 = ?
+            WHERE UserID = ?";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("ssssssssssssi", $firstName, $lastName, $mainEmail, $email2, $email3, $email4, $email5, $email6, $additionalPassword1, $additionalPassword2, $additionalPassword3, $additionalPassword4, $userID);
+
+    if ($stmt->execute()) {
+        $success = "Profile updated successfully!";
+    } else {
+        $error = "Error updating profile: " . $stmt->error;
+    }
+
+    $stmt->close();
+}
+
+$conn->close();
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edit Profile</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <h1>Edit Profile</h1>
+    <?php if ($error): ?>
+        <div class="error"><?php echo $error; ?></div>
+    <?php endif; ?>
+    <?php if ($success): ?>
+        <div class="success"><?php echo $success; ?></div>
+    <?php endif; ?>
+    <form method="POST" action="edit_profile.php">
+        <label for="firstName">First Name:</label>
+        <input type="text" id="firstName" name="firstName" value="<?php echo $user['FirstName']; ?>" required><br>
+        <label for="lastName">Last Name:</label>
+        <input type="text" id="lastName" name="lastName" value="<?php echo $user['LastName']; ?>" required><br>
+        <label for="mainEmail">Main Email:</label>
+        <input type="email" id="mainEmail" name="mainEmail" value="<?php echo $user['MainEmail']; ?>" required><br>
+        <label for="email2">Email 2:</label>
+        <input type="email" id="email2" name="email2" value="<?php echo $user['Email2']; ?>"><br>
+        <label for="email3">Email 3:</label>
+        <input type="email" id="email3" name="email3" value="<?php echo $user['Email3']; ?>"><br>
+        <label for="email4">Email 4:</label>
+        <input type="email" id="email4" name="email4" value="<?php echo $user['Email4']; ?>"><br>
+        <label for="email5">Email 5:</label>
+        <input type="email" id="email5" name="email5" value="<?php echo $user['Email5']; ?>"><br>
+        <label for="email6">Email 6:</label>
+        <input type="email" id="email6" name="email6" value="<?php echo $user['Email6']; ?>"><br>
+        <label for="additionalPassword1">Additional Password 1:</label>
+        <input type="password" id="additionalPassword1" name="additionalPassword1" placeholder="Leave blank to keep current"><br>
+        <label for="additionalPassword2">Additional Password 2:</label>
+        <input type="password" id="additionalPassword2" name="additionalPassword2" placeholder="Leave blank to keep current"><br>
+        <label for="additionalPassword3">Additional Password 3:</label>
+        <input type="password" id="additionalPassword3" name="additionalPassword3" placeholder="Leave blank to keep current"><br>
+        <label for="additionalPassword4">Additional Password 4:</label>
+        <input type="password" id="additionalPassword4" name="additionalPassword4" placeholder="Leave blank to keep current"><br>
+        <button type="submit">Update Profile</button>
+    </form>
+    <a href="menu.php">Back to Menu</a>
+</body>
+</html>
+```
+
+### Explanation:
+1. **Session and Database Connection**: The script starts a session and includes the database connection file (`db.php`).
+2. **User Authentication**: It checks if the user is logged in by verifying the session variable `user_id`. If not, it redirects to the login page.
+3. **Fetch User Data**: It fetches the user's data from the database using the `UserID` stored in the session.
+4. **Form Submission**: If the form is submitted (`$_SERVER['REQUEST_METHOD'] == 'POST'`), it updates the user's data in the database. The fields that can be updated are `FirstName`, `LastName`, `MainEmail`, `Email2` to `Email6`, and `AdditionalPassword1` to `AdditionalPassword4`.
+5. **Form Display**: It displays a form with the current user data for editing. The form includes fields for `FirstName`, `LastName`, `MainEmail`, `Email2` to `Email6`, and `AdditionalPassword1` to `AdditionalPassword4
+
+----
+
+Sure! Below is the code for the `edit_personal_info.php` module that allows editing the `DateOfBirth`, `Gender`, `Address`, `City`, `State`, `Country`, `PostalCode`, and `PhoneNumber` fields in the database record.
+
+### `edit_personal_info.php`
+```php
+<?php
+session_start();
+require 'db.php';
+
+if (!isset($_SESSION['user_id'])) {
+    header("Location: login.php");
+    exit();
+}
+
+$userID = $_SESSION['user_id'];
+$sql = "SELECT * FROM UserProfile WHERE UserID = ?";
+$stmt = $conn->prepare($sql);
+$stmt->bind_param("i", $userID);
+$stmt->execute();
+$result = $stmt->get_result();
+$user = $result->fetch_assoc();
+$stmt->close();
+
+$error = '';
+$success = '';
+
+if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    $dateOfBirth = $_POST['dateOfBirth'];
+    $gender = $_POST['gender'];
+    $address = $_POST['address'];
+    $city = $_POST['city'];
+    $state = $_POST['state'];
+    $country = $_POST['country'];
+    $postalCode = $_POST['postalCode'];
+    $phoneNumber = $_POST['phoneNumber'];
+
+    $sql = "UPDATE UserProfile SET
+            DateOfBirth = ?,
+            Gender = ?,
+            Address = ?,
+            City = ?,
+            State = ?,
+            Country = ?,
+            PostalCode = ?,
+            PhoneNumber = ?
+            WHERE UserID = ?";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("ssssssssi", $dateOfBirth, $gender, $address, $city, $state, $country, $postalCode, $phoneNumber, $userID);
+
+    if ($stmt->execute()) {
+        $success = "Personal information updated successfully!";
+    } else {
+        $error = "Error updating personal information: " . $stmt->error;
+    }
+
+    $stmt->close();
+}
+
+$conn->close();
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edit Personal Information</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <h1>Edit Personal Information</h1>
+    <?php if ($error): ?>
+        <div class="error"><?php echo $error; ?></div>
+    <?php endif; ?>
+    <?php if ($success): ?>
+        <div class="success"><?php echo $success; ?></div>
+    <?php endif; ?>
+    <form method="POST" action="edit_personal_info.php">
+        <label for="dateOfBirth">Date of Birth:</label>
+        <input type="date" id="dateOfBirth" name="dateOfBirth" value="<?php echo $user['DateOfBirth']; ?>" required><br>
+        <label for="gender">Gender:</label>
+        <select id="gender" name="gender" required>
+            <option value="Male" <?php if ($user['Gender'] == 'Male') echo 'selected'; ?>>Male</option>
+            <option value="Female" <?php if ($user['Gender'] == 'Female') echo 'selected'; ?>>Female</option>
+            <option value="Other" <?php if ($user['Gender'] == 'Other') echo 'selected'; ?>>Other</option>
+        </select><br>
+        <label for="address">Address:</label>
+        <input type="text" id="address" name="address" value="<?php echo $user['Address']; ?>" required><br>
+        <label for="city">City:</label>
+        <input type="text" id="city" name="city" value="<?php echo $user['City']; ?>" required><br>
+        <label for="state">State:</label>
+        <input type="text" id="state" name="state" value="<?php echo $user['State']; ?>" required><br>
+        <label for="country">Country:</label>
+        <input type="text" id="country" name="country" value="<?php echo $user['Country']; ?>" required><br>
+        <label for="postalCode">Postal Code:</label>
+        <input type="text" id="postalCode" name="postalCode" value="<?php echo $user['PostalCode']; ?>" required><br>
+        <label for="phoneNumber">Phone Number:</label>
+        <input type="text" id="phoneNumber" name="phoneNumber" value="<?php echo $user['PhoneNumber']; ?>" required><br>
+        <button type="submit">Update Personal Information</button>
+    </form>
+    <a href="menu.php">Back to Menu</a>
+</body>
+</html>
+```
+
+### Explanation:
+1. **Session and Database Connection**: The script starts a session and includes the database connection file (`db.php`).
+2. **User Authentication**: It checks if the user is logged in by verifying the session variable `user_id`. If not, it redirects to the login page.
+3. **Fetch User Data**: It fetches the user's data from the database using the `UserID` stored in the session.
+4. **Form Submission**: If the form is submitted (`$_SERVER['REQUEST_METHOD'] == 'POST'`), it updates the user's personal information in the database. The fields that can be updated are `DateOfBirth`, `Gender`, `Address`, `City`, `State`, `Country`, `PostalCode`, and `PhoneNumber`.
+5. **Form Display**: It displays a form with the current user data for editing. The form includes fields for `DateOfBirth`, `Gender`, `Address`, `City`, `State`, `Country`, `PostalCode`, and `PhoneNumber`.
+
+### Adding a Link to `menu.php`
+To make this new module accessible, you should add a link to `edit_personal_info.php` in your `menu.php` file:
+
+```php
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Menu</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <h1>Menu</h1>
+    <ul>
+        <li><a href="placeholder1.php">Placeholder 1</a></li>
+        <li><a href="placeholder2.php">Placeholder 2</a></li>
+        <li><a href="placeholder3.php">Placeholder 3</a></li>
+        <li><a href="placeholder4.php">Placeholder 4</a></li>
+        <li><a href="placeholder5.php">Placeholder 5</a></li>
+        <li><a href="edit_profile.php">Edit Profile</a></li>
+        <li><a href="edit_personal_info.php">Edit Personal Information</a></li>
+    </ul>
+    <a href="logout.php">Logout</a>
+</body>
+</html>
+```
+
+This will add a new menu item for editing personal information, making it easy for users to access and update their personal details.
+
+----
+
+Sure! To add a dark mode to your CSS, you can define a set of styles for dark mode and use a class to toggle between light and dark modes. Below is the updated `styles.css` with dark mode styles and a toggle button in the HTML files.
+
+### Updated `styles.css`
+```css
+/* Light Mode Styles */
+body {
+    font-family: Arial, sans-serif;
+    margin: 20px;
+    background-color: #ffffff;
+    color: #333333;
+    transition: background-color 0.3s, color 0.3s;
+}
+
+h1 {
+    color: #333333;
+}
+
+form {
+    margin-top: 20px;
+}
+
+label {
+    display: block;
+    margin-top: 10px;
+}
+
+input, select {
+    width: 100%;
+    padding: 8px;
+    margin-top: 5px;
+    border: 1px solid #cccccc;
+    border-radius: 4px;
+}
+
+button {
+    margin-top: 20px;
+    padding: 10px 20px;
+    background-color: #007BFF;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+button:hover {
+    background-color: #0056b3;
+}
+
+a {
+    display: block;
+    margin-top: 20px;
+    color: #007BFF;
+    text-decoration: none;
+    transition: color 0.3s;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+.error {
+    color: red;
+    margin-top: 20px;
+}
+
+.success {
+    color: green;
+    margin-top: 20px;
+}
+
+/* Dark Mode Styles */
+body.dark-mode {
+    background-color: #121212;
+    color: #e0e0e0;
+}
+
+body.dark-mode h1 {
+    color: #e0e0e0;
+}
+
+body.dark-mode input, body.dark-mode select {
+    background-color: #1e1e1e;
+    color: #e0e0e0;
+    border: 1px solid #444444;
+}
+
+body.dark-mode button {
+    background-color: #1a73e8;
+}
+
+body.dark-mode button:hover {
+    background-color: #175cd3;
+}
+
+body.dark-mode a {
+    color: #1a73e8;
+}
+
+body.dark-mode a:hover {
+    color: #175cd3;
+}
+
+/* Toggle Button */
+.toggle-button {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 10px;
+    background-color: #007BFF;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+.toggle-button:hover {
+    background-color: #0056b3;
+}
+```
+
+### Adding the Toggle Button to HTML Files
+You need to add a toggle button to your HTML files to switch between light and dark modes. Here is an example of how to add the toggle button to `index.php`:
+
+```php
+<?php
+session_start();
+if (isset($_SESSION['user_id'])) {
+    header("Location: menu.php");
+    exit();
+}
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Home</title>
+    <link rel="stylesheet" href="styles.css">
+    <script>
+        function toggleDarkMode() {
+            document.body.classList.toggle('dark-mode');
+            localStorage.setItem('darkMode', document.body.classList.contains('dark-mode'));
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            if (localStorage.getItem('darkMode') === 'true') {
+                document.body.classList.add('dark-mode');
+            }
+        });
+    </script>
+</head>
+<body>
+    <button class="toggle-button" onclick="toggleDarkMode()">Toggle Dark Mode</button>
+    <h1>Welcome to the Authentication System</h1>
+    <a href="register.php">Register</a> | <a href="login.php">Login</a>
+</body>
+</html>
+```
+
+### Repeat for Other HTML Files
+You should add the same toggle button and script to all other HTML files (`register.php`, `login.php`, `profile.php`, `menu.php`, `placeholder1.php` to `placeholder5.php`, `edit_profile.php`, and `edit_personal_info.php`). Here is an example for `menu.php`:
+
+```php
+<?php
+session_start();
+
+if (!isset($_SESSION['user_id'])) {
+    header("Location: login.php");
+    exit();
+}
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Menu</title>
+    <link rel="stylesheet" href="styles.css">
+    <script>
+        function toggleDarkMode() {
+            document.body.classList.toggle('dark-mode');
+            localStorage.setItem('darkMode', document.body.classList.contains('dark-mode'));
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            if (localStorage.getItem('darkMode') === 'true') {
+                document.body.classList.add('dark-mode');
+            }
+        });
+    </script>
+</head>
+<body>
+    <button class="toggle-button" onclick="toggleDarkMode()">Toggle Dark Mode</button>
+    <h1>Menu</h1>
+    <ul>
+        <li><a href="placeholder1.php">Placeholder 1</a></li>
+        <li><a href="placeholder2.php">Placeholder 2</a></li>
+        <li><a href="placeholder3.php">Placeholder 3</a></li>
+        <li><a href="placeholder4.php">Placeholder 4</a></li>
+        <li><a href="placeholder5.php">Placeholder 5</a></li>
+        <li><a href="edit_profile.php">Edit Profile</a></li>
+        <li><a href="edit_personal_info.php">Edit Personal Information</a></li>
+    </ul>
+    <a href="logout.php">Logout</a>
+</body>
+</html>
+```
+
+By adding the toggle button and script to each HTML file, users will be able to switch between light and dark modes, and their preference will be saved in the browser's local storage.
+
+----
+
+reload fix
+
+----
+
+To address the issue of the updated information not being displayed immediately after the form submission, you can either reload the page or redirect the user to the main menu. Both approaches ensure that the user sees the updated information without manually reloading the page.
+
+### Option 1: Reload the Page
+You can reload the page after the form submission by adding a `header` redirect to the same page. This will refresh the page and display the updated information.
+
+### Option 2: Redirect to the Main Menu
+You can redirect the user to the main menu after the form submission. This will ensure that the user sees the updated information when they navigate back to the profile or personal information page.
+
+Below are the updated `edit_profile.php` and `edit_personal_info.php` modules with both options implemented. You can choose the one that best fits your needs.
+
+### Updated `edit_profile.php`
+```php
+<?php
+session_start();
+require 'db.php';
+
+if (!isset($_SESSION['user_id'])) {
+    header("Location: login.php");
+    exit();
+}
+
+$userID = $_SESSION['user_id'];
+$sql = "SELECT * FROM UserProfile WHERE UserID = ?";
+$stmt = $conn->prepare($sql);
+$stmt->bind_param("i", $userID);
+$stmt->execute();
+$result = $stmt->get_result();
+$user = $result->fetch_assoc();
+$stmt->close();
+
+$error = '';
+$success = '';
+
+if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    $firstName = $_POST['firstName'];
+    $lastName = $_POST['lastName'];
+    $mainEmail = $_POST['mainEmail'];
+    $email2 = $_POST['email2'];
+    $email3 = $_POST['email3'];
+    $email4 = $_POST['email4'];
+    $email5 = $_POST['email5'];
+    $email6 = $_POST['email6'];
+    $additionalPassword1 = !empty($_POST['additionalPassword1']) ? password_hash($_POST['additionalPassword1'], PASSWORD_BCRYPT) : null;
+    $additionalPassword2 = !empty($_POST['additionalPassword2']) ? password_hash($_POST['additionalPassword2'], PASSWORD_BCRYPT) : null;
+    $additionalPassword3 = !empty($_POST['additionalPassword3']) ? password_hash($_POST['additionalPassword3'], PASSWORD_BCRYPT) : null;
+    $additionalPassword4 = !empty($_POST['additionalPassword4']) ? password_hash($_POST['additionalPassword4'], PASSWORD_BCRYPT) : null;
+
+    $sql = "UPDATE UserProfile SET
+            FirstName = ?,
+            LastName = ?,
+            MainEmail = ?,
+            Email2 = ?,
+            Email3 = ?,
+            Email4 = ?,
+            Email5 = ?,
+            Email6 = ?,
+            AdditionalPassword1 = ?,
+            AdditionalPassword2 = ?,
+            AdditionalPassword3 = ?,
+            AdditionalPassword4 = ?
+            WHERE UserID = ?";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("ssssssssssssi", $firstName, $lastName, $mainEmail, $email2, $email3, $email4, $email5, $email6, $additionalPassword1, $additionalPassword2, $additionalPassword3, $additionalPassword4, $userID);
+
+    if ($stmt->execute()) {
+        $success = "Profile updated successfully!";
+        // Option 1: Reload the page
+        header("Location: edit_profile.php");
+        exit();
+
+        // Option 2: Redirect to the main menu
+        // header("Location: menu.php");
+        // exit();
+    } else {
+        $error = "Error updating profile: " . $stmt->error;
+    }
+
+    $stmt->close();
+}
+
+$conn->close();
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edit Profile</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <h1>Edit Profile</h1>
+    <?php if ($error): ?>
+        <div class="error"><?php echo $error; ?></div>
+    <?php endif; ?>
+    <?php if ($success): ?>
+        <div class="success"><?php echo $success; ?></div>
+    <?php endif; ?>
+    <form method="POST" action="edit_profile.php">
+        <label for="firstName">First Name:</label>
+        <input type="text" id="firstName" name="firstName" value="<?php echo $user['FirstName']; ?>" required><br>
+        <label for="lastName">Last Name:</label>
+        <input type="text" id="lastName" name="lastName" value="<?php echo $user['LastName']; ?>" required><br>
+        <label for="mainEmail">Main Email:</label>
+        <input type="email" id="mainEmail" name="mainEmail" value="<?php echo $user['MainEmail']; ?>" required><br>
+        <label for="email2">Email 2:</label>
+        <input type="email" id="email2" name="email2" value="<?php echo $user['Email2']; ?>"><br>
+        <label for="email3">Email 3:</label>
+        <input type="email" id="email3" name="email3" value="<?php echo $user['Email3']; ?>"><br>
+        <label for="email4">Email 4:</label>
+        <input type="email" id="email4" name="email4" value="<?php echo $user['Email4']; ?>"><br>
+        <label for="email5">Email 5:</label>
+        <input type="email" id="email5" name="email5" value="<?php echo $user['Email5']; ?>"><br>
+        <label for="email6">Email 6:</label>
+        <input type="email" id="email6" name="email6" value="<?php echo $user['Email6']; ?>"><br>
+        <label for="additionalPassword1">Additional Password 1:</label>
+        <input type="password" id="additionalPassword1" name="additionalPassword1" placeholder="Leave blank to keep current"><br>
+        <label for="additionalPassword2">Additional Password 2:</label>
+        <input type="password" id="additionalPassword2" name="additionalPassword2" placeholder="Leave blank to keep current"><br>
+        <label for="additionalPassword3">Additional Password 3:</label>
+        <input type="password" id="additionalPassword3" name="additionalPassword3" placeholder="Leave blank to keep current"><br>
+        <label for="additionalPassword4">Additional Password 4:</label>
+        <input type="password" id="additionalPassword4" name="additionalPassword4" placeholder="Leave blank to keep current"><br>
+        <button type="submit">Update Profile</button>
+    </form>
+    <a href="menu.php">Back to Menu</a>
+</body>
+</html>
+```
+
+### Updated `edit_personal_info.php`
+```php
+<?php
+session_start();
+require 'db.php';
+
+if (!isset($_SESSION['user_id'])) {
+    header("Location: login.php");
+    exit();
+}
+
+$userID = $_SESSION['user_id'];
+$sql = "SELECT * FROM UserProfile WHERE UserID = ?";
+$stmt = $conn->prepare($sql);
+$stmt->bind_param("i", $userID);
+$stmt->execute();
+$result = $stmt->get_result();
+$user = $result->fetch_assoc();
+$stmt->close();
+
+$error = '';
+$success = '';
+
+if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    $dateOfBirth = $_POST['dateOfBirth'];
+    $gender = $_POST['gender'];
+    $address = $_POST['address'];
+    $city = $_POST['city'];
+    $state = $_POST['state'];
+    $country = $_POST['country'];
+    $postalCode = $_POST['postalCode'];
+    $phoneNumber = $_POST['phoneNumber'];
+
+    $sql = "UPDATE UserProfile SET
+            DateOfBirth = ?,
+            Gender = ?,
+            Address = ?,
+            City = ?,
+            State = ?,
+            Country = ?,
+            PostalCode = ?,
+            PhoneNumber = ?
+            WHERE UserID = ?";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("ssssssssi", $dateOfBirth, $gender, $address, $city, $state, $country, $postalCode, $phoneNumber, $userID);
+
+    if ($stmt->execute()) {
+        $success = "Personal information updated successfully!";
+        // Option 1: Reload the page
+        header("Location: edit_personal_info.php");
+        exit();
+
+        // Option 2: Redirect to the main menu
+        // header("Location: menu.php");
+        // exit();
+    } else {
+        $error = "Error updating personal information: " . $stmt->error;
+    }
+
+    $stmt->close();
+}
+
+$conn->close();
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edit Personal Information</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <h1>Edit Personal Information</h1>
+    <?php if ($error): ?>
+        <div class="error"><?php echo $error; ?></div>
+    <?php endif; ?>
+    <?php if ($success): ?>
+        <div class="success"><?php echo $success; ?></div>
+    <?php endif; ?>
+    <form method="POST" action="edit_personal_info.php">
+        <label for="dateOfBirth">Date of Birth:</label>
+        <input type="date" id="dateOfBirth" name="dateOfBirth" value="<?php echo $user['DateOfBirth']; ?>" required><br>
+        <label for="gender">Gender:</label>
+        <select id="gender" name="gender" required>
+            <option value="Male" <?php if ($user['Gender'] == 'Male') echo 'selected'; ?>>Male</option>
+            <option value="Female" <?php if ($user['Gender'] == 'Female') echo 'selected'; ?>>Female</option>
+            <option value="Other" <?php if ($user['Gender'] == 'Other') echo 'selected'; ?>>Other</option>
+        </select><br>
+        <label for="address">Address:</label>
+        <input type="text" id="address" name="address" value="<?php echo $user['Address']; ?>" required><br>
+        <label for="city">City:</label>
+        <input type="text" id="city" name="city" value="<?php echo $user['City']; ?>" required><br>
+        <label for="state">State:</label>
+        <input type="text" id="state" name="state" value="<?php echo $user['State']; ?>" required><br>
+        <label for="country">Country:</label>
+        <input type="text" id="country" name="country" value="<?php echo $user['Country']; ?>" required><br>
+        <label for="postalCode">Postal Code:</label>
+        <input type="text" id="postalCode" name="postalCode" value="<?php echo $user['PostalCode']; ?>" required><br>
+        <label for="phoneNumber">Phone Number:</label>
+        <input type="text" id="phoneNumber" name="phoneNumber" value="<?php echo $user['PhoneNumber']; ?>" required><br>
+        <button type="submit">Update Personal Information</button>
+    </form>
+    <a href="menu.php">Back to Menu</a>
+</body>
+</html>
+```
+
+### Explanation:
+- **Reload the Page**: After the form submission, the page is reloaded using `header("Location: edit_profile.php");` or `header("Location: edit_personal_info.php");`. This ensures that the updated information is displayed immediately.
+- **Redirect to the Main Menu**: Alternatively, you can redirect the user to the main menu using `header("Location: menu.php");`. This ensures that the user sees the updated information when they navigate back to the profile or personal information page.
+
+Choose the option that best fits your needs and uncomment the corresponding line in the code.
+
+----
+
+browser dark mode fix
+
+----
+
+The issue with dark mode not working in Firefox could be due to differences in how browsers handle local storage or the DOMContentLoaded event. To ensure compatibility across browsers, we can make a few adjustments to the JavaScript code.
+
+### Updated JavaScript for Dark Mode Toggle
+Here is the updated JavaScript code that should work across different browsers, including Firefox:
+
+```html
+<script>
+    function toggleDarkMode() {
+        document.body.classList.toggle('dark-mode');
+        localStorage.setItem('darkMode', document.body.classList.contains('dark-mode'));
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        const darkMode = localStorage.getItem('darkMode');
+        if (darkMode === 'true') {
+            document.body.classList.add('dark-mode');
+        }
+    });
+</script>
+```
+
+### Explanation:
+1. **toggleDarkMode Function**: This function toggles the `dark-mode` class on the `body` element and saves the state in local storage.
+2. **DOMContentLoaded Event**: This event listener checks the local storage for the `darkMode` item when the DOM is fully loaded. If `darkMode` is set to `true`, it adds the `dark-mode` class to the `body` element.
+
+### Adding the Toggle Button to HTML Files
+Ensure that the toggle button and the updated script are added to all your HTML files. Here is an example for `index.php`:
+
+```php
+<?php
+session_start();
+if (isset($_SESSION['user_id'])) {
+    header("Location: menu.php");
+    exit();
+}
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Home</title>
+    <link rel="stylesheet" href="styles.css">
+    <script>
+        function toggleDarkMode() {
+            document.body.classList.toggle('dark-mode');
+            localStorage.setItem('darkMode', document.body.classList.contains('dark-mode'));
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const darkMode = localStorage.getItem('darkMode');
+            if (darkMode === 'true') {
+                document.body.classList.add('dark-mode');
+            }
+        });
+    </script>
+</head>
+<body>
+    <button class="toggle-button" onclick="toggleDarkMode()">Toggle Dark Mode</button>
+    <h1>Welcome to the Authentication System</h1>
+    <a href="register.php">Register</a> | <a href="login.php">Login</a>
+</body>
+</html>
+```
+
+### Repeat for Other HTML Files
+Add the same toggle button and script to all other HTML files (`register.php`, `login.php`, `profile.php`, `menu.php`, `placeholder1.php` to `placeholder5.php`, `edit_profile.php`, and `edit_personal_info.php`). Here is an example for `menu.php`:
+
+```php
+<?php
+session_start();
+
+if (!isset($_SESSION['user_id'])) {
+    header("Location: login.php");
+    exit();
+}
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Menu</title>
+    <link rel="stylesheet" href="styles.css">
+    <script>
+        function toggleDarkMode() {
+            document.body.classList.toggle('dark-mode');
+            localStorage.setItem('darkMode', document.body.classList.contains('dark-mode'));
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const darkMode = localStorage.getItem('darkMode');
+            if (darkMode === 'true') {
+                document.body.classList.add('dark-mode');
+            }
+        });
+    </script>
+</head>
+<body>
+    <button class="toggle-button" onclick="toggleDarkMode()">Toggle Dark Mode</button>
+    <h1>Menu</h1>
+    <ul>
+        <li><a href="placeholder1.php">Placeholder 1</a></li>
+        <li><a href="placeholder2.php">Placeholder 2</a></li>
+        <li><a href="placeholder3.php">Placeholder 3</a></li>
+        <li><a href="placeholder4.php">Placeholder 4</a></li>
+        <li><a href="placeholder5.php">Placeholder 5</a></li>
+        <li><a href="edit_profile.php">Edit Profile</a></li>
+        <li><a href="edit_personal_info.php">Edit Personal Information</a></li>
+    </ul>
+    <a href="logout.php">Logout</a>
+</body>
+</html>
+```
+
+By ensuring that the JavaScript code is compatible with different browsers and adding the toggle button to all HTML files, the dark mode feature should work consistently across browsers, including Firefox.
+
+----
+
+Certainly! To allow users to change their main password, you can create a new PHP module called `change_password.php`. This module will handle the form submission for updating the user's main password and will display the current password fields for editing.
+
+### `change_password.php`
+```php
+<?php
+session_start();
+require 'db.php';
+
+if (!isset($_SESSION['user_id'])) {
+    header("Location: login.php");
+    exit();
+}
+
+$userID = $_SESSION['user_id'];
+$sql = "SELECT * FROM UserProfile WHERE UserID = ?";
+$stmt = $conn->prepare($sql);
+$stmt->bind_param("i", $userID);
+$stmt->execute();
+$result = $stmt->get_result();
+$user = $result->fetch_assoc();
+$stmt->close();
+
+$error = '';
+$success = '';
+
+if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    $currentPassword = $_POST['currentPassword'];
+    $newPassword = $_POST['newPassword'];
+    $confirmPassword = $_POST['confirmPassword'];
+
+    if (password_verify($currentPassword, $user['MainPassword'])) {
+        if ($newPassword === $confirmPassword) {
+            $hashedPassword = password_hash($newPassword, PASSWORD_BCRYPT);
+            $sql = "UPDATE UserProfile SET MainPassword = ? WHERE UserID = ?";
+            $stmt = $conn->prepare($sql);
+            $stmt->bind_param("si", $hashedPassword, $userID);
+            $stmt->execute();
+            $stmt->close();
+            $success = "Main Password updated successfully!";
+            // Option 1: Reload the page
+            header("Location: change_password.php");
+            exit();
+
+            // Option 2: Redirect to the main menu
+            // header("Location: menu.php");
+            // exit();
+        } else {
+            $error = "New passwords do not match.";
+        }
+    } else {
+        $error = "Current password is incorrect.";
+    }
+}
+
+$conn->close();
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Change Password</title>
+    <link rel="stylesheet" href="styles.css">
+    <script>
+        function toggleDarkMode() {
+            document.body.classList.toggle('dark-mode');
+            localStorage.setItem('darkMode', document.body.classList.contains('dark-mode'));
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const darkMode = localStorage.getItem('darkMode');
+            if (darkMode === 'true') {
+                document.body.classList.add('dark-mode');
+            }
+        });
+    </script>
+</head>
+<body>
+    <button class="toggle-button" onclick="toggleDarkMode()">Toggle Dark Mode</button>
+    <h1>Change Password</h1>
+    <?php if ($error): ?>
+        <div class="error"><?php echo $error; ?></div>
+    <?php endif; ?>
+    <?php if ($success): ?>
+        <div class="success"><?php echo $success; ?></div>
+    <?php endif; ?>
+    <form method="POST" action="change_password.php">
+        <label for="currentPassword">Current Password:</label>
+        <input type="password" id="currentPassword" name="currentPassword" required><br>
+        <label for="newPassword">New Password:</label>
+        <input type="password" id="newPassword" name="newPassword" required><br>
+        <label for="confirmPassword">Confirm New Password:</label>
+        <input type="password" id="confirmPassword" name="confirmPassword" required><br>
+        <button type="submit">Change Password</button>
+    </form>
+    <a href="menu.php">Back to Menu</a>
+</body>
+</html>
+```
+
+### Explanation:
+1. **Session and Database Connection**: The script starts a session and includes the database connection file (`db.php`).
+2. **User Authentication**: It checks if the user is logged in by verifying the session variable `user_id`. If not, it redirects to the login page.
+3. **Fetch User Data**: It fetches the user's data from the database using the `UserID` stored in the session.
+4. **Form Submission**: If the form is submitted (`$_SERVER['REQUEST_METHOD'] == 'POST'`), it updates the user's main password in the database. The fields that can be updated are `currentPassword`, `newPassword`, and `confirmPassword`.
+5. **Form Display**: It displays a form with the current password fields for editing. The form includes fields for `currentPassword`, `newPassword`, and `confirmPassword`.
+6. **Dark Mode Toggle**: The dark mode toggle button and script are included to ensure compatibility across browsers.
+
+### Adding a Link to `menu.php`
+To make this new module accessible, you should add a link to `change_password.php` in your `menu.php` file:
+
+```php
+<?php
+session_start();
+
+if (!isset($_SESSION['user_id'])) {
+    header("Location: login.php");
+    exit();
+}
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Menu</title>
+    <link rel="stylesheet" href="styles.css">
+    <script>
+        function toggleDarkMode() {
+            document.body.classList.toggle('dark-mode');
+            localStorage.setItem('darkMode', document.body.classList.contains('dark-mode'));
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const darkMode = localStorage.getItem('darkMode');
+            if (darkMode === 'true') {
+                document.body.classList.add('dark-mode');
+            }
+        });
+    </script>
+</head>
+<body>
+    <button class="toggle-button" onclick="toggleDarkMode()">Toggle Dark Mode</button>
+    <h1>Menu</h1>
+    <ul>
+        <li><a href="placeholder1.php">Placeholder 1</a></li>
+        <li><a href="placeholder2.php">Placeholder 2</a></li>
+        <li><a href="placeholder3.php">Placeholder 3</a></li>
+        <li><a href="placeholder4.php">Placeholder 4</a></li>
+        <li><a href="placeholder5.php">Placeholder 5</a></li>
+        <li><a href="edit_profile.php">Edit Profile</a></li>
+        <li><a href="edit_personal_info.php">Edit Personal Information</a></li>
+        <li><a href="change_password.php">Change Password</a></li>
+    </ul>
+    <a href="logout.php">Logout</a>
+</body>
+</html>
+```
+
+By adding the link to `change_password.php` in the menu, users can easily access the password change feature. The dark mode toggle button and script ensure that the dark mode feature works consistently across browsers.

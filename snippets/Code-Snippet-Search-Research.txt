@@ -1,0 +1,829 @@
+Q: 	Write a python program that will search the internet for code snippets related to the supplied quoted string
+
+A: 	Sure! Below is a Python program that searches the internet for code snippets related to a supplied quoted string. 
+	This program uses the GitHub Code Search API to find code files that match your query.
+
+```python
+import requests
+from urllib.parse import quote
+
+def search_code_snippets(query):
+    """
+    Searches GitHub for code snippets related to the supplied query.
+
+    Args:
+        query (str): The search query string.
+
+    Returns:
+        list: A list of dictionaries containing repository name, file path, and URL.
+    """
+    # Encode the query string for URL
+    encoded_query = quote(query)
+
+    # GitHub Code Search API endpoint
+    url = f"https://api.github.com/search/code?q={encoded_query}+in:file"
+
+    # Make a GET request to the API
+    response = requests.get(url)
+
+    # Check for HTTP errors
+    if response.status_code != 200:
+        print(f"Error: {response.status_code} - {response.reason}")
+        return []
+
+    # Parse the JSON response
+    results = response.json()
+
+    # Extract relevant information from each item
+    snippets = []
+    for item in results.get('items', []):
+        snippet = {
+            'repository': item['repository']['full_name'],
+            'file_path': item['path'],
+            'html_url': item['html_url']
+        }
+        snippets.append(snippet)
+
+    return snippets
+
+def main():
+    print("=== Code Snippet Search ===")
+    query = input("Enter your search query (e.g., 'binary search in python'): ")
+
+    print("\nSearching for code snippets related to your query...\n")
+    snippets = search_code_snippets(query)
+
+    if not snippets:
+        print("No code snippets found for your query.")
+        return
+
+    # Display the search results
+    for idx, snippet in enumerate(snippets, start=1):
+        print(f"Result #{idx}")
+        print(f"Repository: {snippet['repository']}")
+        print(f"File Path: {snippet['file_path']}")
+        print(f"URL: {snippet['html_url']}\n")
+
+if __name__ == "__main__":
+    main()
+```
+
+### How the Program Works:
+
+1. **Imports Required Libraries**:
+   - `requests`: For making HTTP requests to the GitHub API.
+   - `urllib.parse.quote`: For URL-encoding the query string.
+
+2. **Defines `search_code_snippets` Function**:
+   - Takes a query string as input.
+   - Encodes the query for use in a URL.
+   - Sends a GET request to the GitHub Code Search API.
+   - Handles HTTP errors.
+   - Parses the JSON response and extracts the repository name, file path, and URL for each code snippet.
+
+3. **Main Execution Flow**:
+   - Prompts the user to enter a search query.
+   - Calls the `search_code_snippets` function with the user's query.
+   - Prints out the search results in a readable format.
+
+### Usage Instructions:
+
+1. **Install Required Library**:
+   Ensure you have the `requests` library installed. You can install it using:
+
+   ```bash
+   pip install requests
+   ```
+
+2. **Run the Program**:
+   Save the script to a file, say `code_snippet_search.py`, and run it using:
+
+   ```bash
+   python code_snippet_search.py
+   ```
+
+3. **Enter Your Query**:
+   When prompted, enter the code or concept you're interested in. For example:
+
+   ```
+   Enter your search query (e.g., 'binary search in python'): "quick sort algorithm"
+   ```
+
+4. **View Results**:
+   The program will display a list of code files from GitHub repositories that match your query, providing the repository name, file path, and a direct URL to view the code.
+
+### Example Output:
+
+```
+=== Code Snippet Search ===
+Enter your search query (e.g., 'binary search in python'): "merge sort in python"
+
+Searching for code snippets related to your query...
+
+Result #1
+Repository: username/repo1
+File Path: algorithms/merge_sort.py
+URL: https://github.com/username/repo1/blob/main/algorithms/merge_sort.py
+
+Result #2
+Repository: username/repo2
+File Path: sorting/merge_sort.py
+URL: https://github.com/username/repo2/blob/main/sorting/merge_sort.py
+
+...
+```
+
+### Notes:
+
+- **GitHub API Rate Limiting**: Unauthenticated requests to the GitHub API are limited to 10 requests per minute. 
+If you exceed this limit, you may receive a `403 Forbidden` error. To increase the rate limit, 
+you can authenticate your requests by creating a GitHub Personal Access Token and including it in the headers:
+
+  ```python
+  headers = {'Authorization': 'token YOUR_PERSONAL_ACCESS_TOKEN'}
+  response = requests.get(url, headers=headers)
+  ```
+
+- **Search Query Tips**:
+  - Use specific keywords to get more relevant results.
+  - Enclose multi-word queries in quotes to search for the exact phrase.
+  - You can refine your search using [GitHub's search qualifiers](https://docs.github.com/en/search-github/searching-on-github/searching-code#search-within-a-users-or-organizations-repositories).
+
+### Disclaimer:
+
+This program searches for publicly available code snippets on GitHub. Ensure that you comply with the respective licenses of any code you view or use. 
+Always respect the intellectual property rights of others.
+
+Q: 	now generate a web page wrapper that will run on an apache web server that will provide an input box that allow for entering 
+	a sting that will gen call the above suppled python program and display the output 	in an output box below the input
+
+A: 	Sure! I'll help you create a web page wrapper that runs on an Apache web server. This web page will:
+
+- Provide an input box where users can enter a search string.
+- Call the Python program we created earlier to search for code snippets.
+- Display the output in an output box (or section) below the input.
+
+Here's how you can achieve this:
+
+1. **Modify the Python Script to Work as a CGI Script.**
+2. **Create an HTML Web Page with an Input Form.**
+3. **Configure the Apache Web Server to Run CGI Scripts.**
+4. **Test the Application.**
+
+Let's go through each step in detail.
+
+---
+
+### **1. Modify the Python Script to Work as a CGI Script**
+
+We need to adjust our Python script to function as a CGI script that can handle web requests.
+
+**Save the following script as `search_snippets.py` in your `cgi-bin` directory (e.g., `/usr/lib/cgi-bin/` or `/var/www/cgi-bin/`):**
+
+```python
+#!/usr/bin/env python3
+
+import cgi
+import cgitb
+import requests
+from urllib.parse import quote
+import html
+
+# Enable error reporting
+cgitb.enable()
+
+def search_code_snippets(query):
+    """
+    Searches GitHub for code snippets related to the supplied query.
+
+    Args:
+        query (str): The search query string.
+
+    Returns:
+        list or str: A list of dictionaries containing repository name, file path, and URL, or an error message.
+    """
+    # Encode the query string for URL
+    encoded_query = quote(query)
+
+    # GitHub Code Search API endpoint
+    url = f"https://api.github.com/search/code?q={encoded_query}+in:file"
+
+    # Make a GET request to the API
+    response = requests.get(url)
+
+    # Check for HTTP errors
+    if response.status_code != 200:
+        return f"Error: {response.status_code} - {response.reason}"
+
+    # Parse the JSON response
+    results = response.json()
+
+    # Extract relevant information from each item
+    snippets = []
+    for item in results.get('items', []):
+        snippet = {
+            'repository': item['repository']['full_name'],
+            'file_path': item['path'],
+            'html_url': item['html_url']
+        }
+        snippets.append(snippet)
+
+    return snippets
+
+def main():
+    print("Content-Type: text/html")
+    print()
+
+    form = cgi.FieldStorage()
+    query = form.getvalue('query', '')
+
+    print("""
+    <html>
+    <head>
+        <title>Code Snippet Search</title>
+        <style>
+            body { font-family: Arial, sans-serif; margin: 20px; }
+            .result { margin-bottom: 15px; }
+            .error { color: red; }
+            input[type="text"] { width: 80%; padding: 8px; }
+            input[type="submit"] { padding: 8px 16px; }
+        </style>
+    </head>
+    <body>
+        <h1>Code Snippet Search</h1>
+        <form method="post" action="/cgi-bin/search_snippets.py">
+            <input type="text" name="query" value="{0}" placeholder="Enter your search query">
+            <input type="submit" value="Search">
+        </form>
+    """.format(html.escape(query)))
+
+    if query:
+        print("<h2>Search Results for '<em>{0}</em>':</h2>".format(html.escape(query)))
+
+        # Call the search function
+        results = search_code_snippets(query)
+
+        if isinstance(results, str):
+            # An error occurred
+            print('<p class="error">{0}</p>'.format(html.escape(results)))
+        elif results:
+            # Display the search results
+            for idx, snippet in enumerate(results, start=1):
+                print(f"""
+                <div class="result">
+                    <strong>Result #{idx}</strong><br>
+                    <strong>Repository:</strong> {html.escape(snippet['repository'])}<br>
+                    <strong>File Path:</strong> {html.escape(snippet['file_path'])}<br>
+                    <strong>URL:</strong> <a href="{html.escape(snippet['html_url'])}" target="_blank">{html.escape(snippet['html_url'])}</a>
+                </div>
+                """)
+        else:
+            print("<p>No code snippets found for your query.</p>")
+    
+    print("""
+    </body>
+    </html>
+    """)
+
+if __name__ == "__main__":
+    main()
+```
+
+#### **Explanation:**
+
+- **Shebang Line**: `#!/usr/bin/env python3` ensures the script runs with Python 3.
+- **CGI Modules**: Imported `cgi` and `cgitb` for handling form data and debugging.
+- **HTML Escaping**: Used `html.escape()` to sanitize user inputs and outputs.
+- **Content-Type Header**: Printed `Content-Type: text/html` to denote the response is HTML.
+- **HTML Output**: The script outputs an HTML page with the form and results.
+
+---
+
+### **2. Create an HTML Web Page with an Input Form**
+
+Although the CGI script generates the form, you might want a separate HTML page that users can access directly.
+
+**Save the following as `index.html` in your web server's root directory (e.g., `/var/www/html/`):**
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Code Snippet Search</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        input[type="text"] { width: 80%; padding: 8px; }
+        input[type="submit"] { padding: 8px 16px; }
+    </style>
+</head>
+<body>
+    <h1>Code Snippet Search</h1>
+    <form method="post" action="/cgi-bin/search_snippets.py">
+        <input type="text" name="query" placeholder="Enter your search query">
+        <input type="submit" value="Search">
+    </form>
+</body>
+</html>
+```
+
+**Explanation:**
+
+- This HTML page provides an input form for users.
+- The form submits to the CGI script `search_snippets.py`.
+
+---
+
+### **3. Configure the Apache Web Server to Run CGI Scripts**
+
+Apache needs to be configured to execute CGI scripts.
+
+#### **Steps:**
+
+1. **Enable CGI Module**
+
+   Run the following command to enable the CGI module:
+
+   ```bash
+   sudo a2enmod cgi
+   ```
+
+2. **Configure the CGI Directory**
+
+   Ensure the `cgi-bin` directory is correctly set up in your Apache configuration.
+
+   Edit the default site configuration:
+
+   ```bash
+   sudo nano /etc/apache2/sites-available/000-default.conf
+   ```
+
+   Add the following configuration if it's not already present:
+
+   ```apache
+   ScriptAlias /cgi-bin/ /usr/lib/cgi-bin/
+   <Directory "/usr/lib/cgi-bin">
+       AllowOverride None
+       Options +ExecCGI -MultiViews +SymLinksIfOwnerMatch
+       Require all granted
+   </Directory>
+   ```
+
+   *Adjust the paths if your `cgi-bin` directory is located elsewhere.*
+
+3. **Set Permissions**
+
+   Ensure that the CGI script is executable:
+
+   ```bash
+   sudo chmod 755 /usr/lib/cgi-bin/search_snippets.py
+   ```
+
+4. **Install Required Python Modules**
+
+   Install the `requests` library:
+
+   ```bash
+   sudo apt-get update
+   sudo apt-get install python3-pip
+   sudo pip3 install requests
+   ```
+
+5. **Restart Apache**
+
+   Apply the changes by restarting Apache:
+
+   ```bash
+   sudo systemctl restart apache2
+   ```
+
+---
+
+### **4. Test the Application**
+
+- Open your web browser and navigate to `http://your_server_ip/`.
+
+- You should see the input form from `index.html`.
+
+- Enter a search query, e.g., `"binary search in python"`, and click **Search**.
+
+- The browser should display the results generated by the `search_snippets.py` CGI script.
+
+---
+
+### **Example Output**
+
+**Search Page:**
+
+![Search Page](data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgwIiBoZWlnaHQ9IjM2MCIgZmlsbD0iI0U1RTVFNSI+PHJlY3Qgd2lkdGg9IjQ4MCIgaGVpZ2h0PSIzNjAiIGZpbGw9IiNFNUU1RTUiIHJ4PSIxNSIvPjx0ZXh0IHg9IjEwIiB5PSIyMCIgZm9udC1zaXplPSIyMHB4IiBmaWxsPSIjNzI3MjcyIj5TZWFyY2ggUGFnZTwvdGV4dD48dGV4dCB4PSIxMCIgeT0iNTAiIGZvbnQtc2l6ZT0iMTZweCIgZmlsbD0iIzcyNzI3MiI+W0lucHV0IEZvcm1dPC90ZXh0Pjwvc3ZnPg==)
+
+*(This is a placeholder image.)*
+
+**Results Page:**
+
+After submitting the search, the results should appear below the form.
+
+---
+
+### **Notes**
+
+- **GitHub API Rate Limiting**
+
+  - Unauthenticated requests have a low rate limit.
+  - To increase the limit, use a GitHub Personal Access Token.
+  - Modify the `search_code_snippets` function:
+
+    ```python
+    import os
+
+    GITHUB_TOKEN = 'YOUR_PERSONAL_ACCESS_TOKEN'  # Store this securely
+
+    def search_code_snippets(query):
+        # ...
+        headers = {'Authorization': f'token {GITHUB_TOKEN}'}
+        response = requests.get(url, headers=headers)
+        # ...
+    ```
+
+- **Security Considerations**
+
+  - **Input Sanitization**: Used `html.escape()` to prevent HTML injection.
+  - **Do Not Expose Tokens**: If using a token, ensure it's stored securely and not exposed in the source code.
+
+- **Error Handling**
+
+  - Enabled detailed error reporting with `cgitb.enable()`.
+  - Errors will be displayed in the browser, which is helpful for debugging but may not be suitable for a production environment.
+
+---
+
+### **Troubleshooting**
+
+- **500 Internal Server Error**
+
+  - Check the Apache error logs:
+
+    ```bash
+    sudo tail /var/log/apache2/error.log
+    ```
+
+  - Common causes include:
+    - Incorrect file permissions.
+    - Missing modules (e.g., `requests` not installed).
+    - Syntax errors in the script.
+
+- **Script Downloads Instead of Executing**
+
+  - Ensure `Options +ExecCGI` is set in your Apache configuration for the `cgi-bin` directory.
+  - Ensure the script has the correct file extension (`.py`).
+
+---
+
+### **Disclaimer**
+
+This application searches for publicly available code snippets on GitHub. Ensure you comply with the respective licenses when using 
+any code retrieved by this application. Always respect the intellectual property rights of others.
+
+---
+
+Let me know if you have any questions or need further assistance!
+
+Q: 	rewrite the search_snippets.py code to include the GitHub API Rate Limiting code snippet
+
+A: 	Certainly! Below is the updated `search_snippets.py` code that includes handling for GitHub API rate limiting by using a Personal Access Token (PAT). 
+	This token increases your API rate limit, allowing you to 	make more requests without hitting the unauthenticated rate limits.
+
+**Important Security Note:** You should **never hard-code your Personal Access Token** directly into your scripts, especially if the script is accessible 
+to others or stored in a public repository. Instead, you should securely store the token, such as in an environment variable.
+
+---
+
+### **Updated `search_snippets.py` Script**
+
+Save the following script as `search_snippets.py` in your `cgi-bin` directory:
+
+```python
+#!/usr/bin/env python3
+
+import cgi
+import cgitb
+import requests
+from urllib.parse import quote
+import html
+import os
+
+# Enable error reporting
+cgitb.enable()
+
+# Retrieve the GitHub Personal Access Token from an environment variable
+GITHUB_TOKEN = os.environ.get('GITHUB_TOKEN')
+
+def search_code_snippets(query):
+    """
+    Searches GitHub for code snippets related to the supplied query.
+
+    Args:
+        query (str): The search query string.
+
+    Returns:
+        list or str: A list of dictionaries containing repository name, file path, and URL,
+                     or an error message.
+    """
+    # Encode the query string for URL
+    encoded_query = quote(query)
+
+    # GitHub Code Search API endpoint
+    url = f"https://api.github.com/search/code?q={encoded_query}+in:file"
+
+    headers = {}
+    if GITHUB_TOKEN:
+        headers['Authorization'] = f'token {GITHUB_TOKEN}'
+
+    # Make a GET request to the API
+    response = requests.get(url, headers=headers)
+
+    # Check for HTTP errors
+    if response.status_code != 200:
+        # Extract error message from response
+        error_message = response.json().get('message', 'Unknown error occurred.')
+        return f"Error: {response.status_code} - {error_message}"
+
+    # Parse the JSON response
+    results = response.json()
+
+    # Extract relevant information from each item
+    snippets = []
+    for item in results.get('items', []):
+        snippet = {
+            'repository': item['repository']['full_name'],
+            'file_path': item['path'],
+            'html_url': item['html_url']
+        }
+        snippets.append(snippet)
+
+    return snippets
+
+def main():
+    print("Content-Type: text/html")
+    print()
+
+    form = cgi.FieldStorage()
+    query = form.getvalue('query', '')
+
+    print("""
+    <html>
+    <head>
+        <title>Code Snippet Search</title>
+        <style>
+            body { font-family: Arial, sans-serif; margin: 20px; }
+            .result { margin-bottom: 15px; }
+            .error { color: red; }
+            input[type="text"] { width: 80%; padding: 8px; }
+            input[type="submit"] { padding: 8px 16px; }
+        </style>
+    </head>
+    <body>
+        <h1>Code Snippet Search</h1>
+        <form method="post" action="/cgi-bin/search_snippets.py">
+            <input type="text" name="query" value="{0}" placeholder="Enter your search query">
+            <input type="submit" value="Search">
+        </form>
+    """.format(html.escape(query)))
+
+    if query:
+        print("<h2>Search Results for '<em>{0}</em>':</h2>".format(html.escape(query)))
+
+        # Call the search function
+        results = search_code_snippets(query)
+
+        if isinstance(results, str):
+            # An error occurred
+            print('<p class="error">{0}</p>'.format(html.escape(results)))
+        elif results:
+            # Display the search results
+            for idx, snippet in enumerate(results, start=1):
+                print(f"""
+                <div class="result">
+                    <strong>Result #{idx}</strong><br>
+                    <strong>Repository:</strong> {html.escape(snippet['repository'])}<br>
+                    <strong>File Path:</strong> {html.escape(snippet['file_path'])}<br>
+                    <strong>URL:</strong> <a href="{html.escape(snippet['html_url'])}" target="_blank">{html.escape(snippet['html_url'])}</a>
+                </div>
+                """)
+        else:
+            print("<p>No code snippets found for your query.</p>")
+
+    print("""
+    </body>
+    </html>
+    """)
+
+if __name__ == "__main__":
+        main()
+```
+
+---
+
+### **Steps to Set Up the Script with GitHub API Rate Limiting Handling**
+
+#### **1. Create a GitHub Personal Access Token (PAT)**
+
+1. Log in to your GitHub account.
+2. Navigate to [Settings](https://github.com/settings/profile).
+3. On the left sidebar, click on **Developer settings**.
+4. Click on **Personal access tokens**.
+5. Click on **Tokens (classic)** (or **Fine-grained tokens** if you prefer).
+6. Click **Generate new token**.
+7. Set a **Note** (e.g., "Code Snippet Search App").
+8. Set an expiration date or select **No expiration** for non-expiring tokens.
+9. Under **Select scopes**, choose **`public_repo`** to allow access to public repositories.
+10. Click **Generate token**.
+11. **Copy the token** now. You won't be able to see it again.
+
+#### **2. Store the Token Securely**
+
+To prevent exposing your token, store it in an environment variable.
+
+**Option A: Set the Environment Variable in Apache Configuration**
+
+1. Open the Apache configuration file:
+
+   ```bash
+   sudo nano /etc/apache2/envvars
+   ```
+
+2. Add the following line at the end (replace `YOUR_PERSONAL_ACCESS_TOKEN` with your actual token):
+
+   ```bash
+   export GITHUB_TOKEN=YOUR_PERSONAL_ACCESS_TOKEN
+   ```
+
+3. Save and close the file (`Ctrl+O`, `Enter`, `Ctrl+X`).
+
+4. Restart Apache:
+
+   ```bash
+   sudo systemctl restart apache2
+   ```
+
+**Option B: Set the Environment Variable in the CGI Script**
+
+Alternatively, you can set the environment variable in the script itself. **However, be cautious**—embedding the token directly into the script can be a security risk if the script is accessible to others.
+
+If you choose this method, add the following line at the top of your script (not recommended for production use):
+
+```python
+os.environ['GITHUB_TOKEN'] = 'YOUR_PERSONAL_ACCESS_TOKEN'
+```
+
+#### **3. Ensure Necessary Permissions and Modules**
+
+1. Make sure the `requests` library is installed and accessible to your script:
+
+   ```bash
+   sudo pip3 install requests
+   ```
+
+2. Ensure the script has execute permissions:
+
+   ```bash
+   sudo chmod 755 /usr/lib/cgi-bin/search_snippets.py
+   ```
+
+#### **4. Testing the Application**
+
+- Navigate to your web page (e.g., `http://your_server_ip/`).
+- Enter a search query and submit.
+- The application should display results, and you should no longer encounter rate limit issues unless you exceed the higher authenticated rate limit.
+
+---
+
+### **Explanation of Changes**
+
+- **Import `os` Module**
+
+  We import the `os` module to access environment variables.
+
+  ```python
+  import os
+  ```
+
+- **Retrieve `GITHUB_TOKEN` from Environment Variable**
+
+  We attempt to get the `GITHUB_TOKEN` environment variable. If it's not set, `GITHUB_TOKEN` will be `None`.
+
+  ```python
+  GITHUB_TOKEN = os.environ.get('GITHUB_TOKEN')
+  ```
+
+- **Include Authorization Header if Token is Available**
+
+  We modify the `search_code_snippets` function to include the `Authorization` header when making the API request.
+
+  ```python
+  headers = {}
+  if GITHUB_TOKEN:
+      headers['Authorization'] = f'token {GITHUB_TOKEN}'
+
+  response = requests.get(url, headers=headers)
+  ```
+
+- **Improved Error Handling**
+
+  We extract error messages from the GitHub API response for better error reporting.
+
+  ```python
+  if response.status_code != 200:
+      # Extract error message from response
+      error_message = response.json().get('message', 'Unknown error occurred.')
+      return f"Error: {response.status_code} - {error_message}"
+  ```
+
+---
+
+### **Important Security Considerations**
+
+- **Do Not Hard-code Tokens**
+
+  Never hard-code your personal access token directly into the script if others can access the script. This can lead to unauthorized access to your GitHub account if the token is compromised.
+
+- **Secure Storage**
+
+  Store sensitive information like tokens securely, utilizing environment variables or secure credential storage mechanisms.
+
+- **Permissions**
+
+  Ensure that the script and any files containing sensitive information have appropriate permissions set to prevent unauthorized access.
+
+- **Public Repositories**
+
+  Be cautious about pushing scripts containing tokens to public repositories. Always verify that no sensitive information is exposed.
+
+---
+
+### **Additional Notes**
+
+- **GitHub API Rate Limits with Authentication**
+
+  By authenticating your requests with a personal access token, you increase the rate limit to **up to 5,000 requests per hour** for authenticated requests.
+
+- **Error Messages**
+
+  The script now provides more informative error messages by extracting the message from the API response, helping diagnose issues like invalid tokens or exceeded rate limits.
+
+- **Fine-Grained Personal Access Tokens**
+
+  GitHub now recommends using fine-grained personal access tokens. When generating a token, select only the permissions necessary for your application.
+
+- **Monitoring Usage**
+
+  Keep an eye on your API usage to ensure you don't exceed rate limits and to monitor for any unusual activity.
+
+---
+
+### **Troubleshooting**
+
+- **Invalid or Missing Token**
+
+  If you encounter authentication errors, ensure that:
+
+  - The token is correctly set in the environment variable.
+  - The token has the necessary permissions.
+  - The token has not expired or been revoked.
+
+- **Permissions Issues**
+
+  If the script isn't executing properly:
+
+  - Verify the execute permissions (`chmod 755`).
+  - Check Apache's error logs for clues:
+
+    ```bash
+    sudo tail /var/log/apache2/error.log
+    ```
+
+- **Module Import Errors**
+
+  If the script cannot find the `requests` module:
+
+  - Ensure `requests` is installed for the version of Python being used by Apache.
+  - Sometimes, the Apache server might use a different Python environment. You might need to install `requests` system-wide or adjust the shebang line to point to the correct Python interpreter.
+
+    ```python
+    #!/usr/bin/env python3
+    ```
+
+  - Verify the path by running:
+
+    ```bash
+    which python3
+    ```
+
+---
+
+### **Conclusion**
+
+By incorporating your GitHub Personal Access Token into the script via environment variables, you increase your API rate limit and reduce the likelihood of encountering rate limit errors during use. Always ensure that you handle sensitive information securely to maintain the integrity and security of your account and systems.
+
+---
+
+Let me know if you need further assistance or have any questions!
