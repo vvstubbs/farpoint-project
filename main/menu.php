@@ -32,7 +32,7 @@ if (!isset($_SESSION['user_id'])) {
     <h1>Menu</h1>
     <ul>
         <li><a href="command_interface.php">Command Line Interface</a></li>
-        <li><a href="nmap.php">Network Scanner</a></li>
+        <li><a href="nmap2.php">Network Scanner</a></li>
         <li><a href="placeholder3.php">Placeholder 3</a></li>
         <li><a href="placeholder4.php">Placeholder 4</a></li>
         <li><a href="placeholder5.php">Placeholder 5</a></li>
